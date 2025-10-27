@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ARMAKO STUDIOS</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 10px; background: #f9f9f9; }
+    input, button { padding: 12px; margin: 8px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    button { background: #4CAF50; color: white; cursor: pointer; }
+    button:hover { opacity: 0.9; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    td, th { border: 1px solid #ddd; padding: 10px; text-align: center; }
+    .slot { cursor: pointer; background: #e8f5e8; }
+    .slot.booked { background: #ffeaea; cursor: not-allowed; }
+    .slot.pending { background: #fff8e1; }
+    h2, h3 { color: #333; }
+  </style>
+</head>
+<body>
+  <div id="login-screen">
+    <h2>ARMAKO STUDIOS — Вход</h2>
+    <input type="text" id="username" placeholder="Логин" autocomplete="off" />
+    <input type="password" id="password" placeholder="Пароль" />
+    <button onclick="login()">Войти</button>
+    <p id="login-error" style="color:red; display:none; margin-top:10px;"></p>
+  </div>
+
+  <div id="app" class="hidden">
+    <h2>Добро пожаловать, <span id="user-name"></span>!</h2>
+    <button onclick="logout()" style="background:#f44336;">Выйти</button>
+    
+    <div id="admin-panel" class="hidden">
+      <h3>Заявки на подтверждение</h3>
+      <div id="pending-list" style="margin:15px 0;"></div>
+    </div>
+    
+    <h3>Выберите дату:</h3>
+    <input type="date" id="date-picker" />
+    <div id="calendar"></div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    async function api(url, data) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await res.json();
+    }
+
+    async function login() {
+      const user = document.getElementById('username').value.trim();
+      const pass = document.getElementById('password').value;
+      const r = await api('/api/login', { username: user, password: pass });
+      const error = document.getElementById('login-error');
+      if (r.success) {
+        currentUser = r.user;
+        document.getElementById('user-name').textContent = r.user.name;
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        if (r.user.role === 'admin') {
+          document.getElementById('admin-panel').classList.remove('hidden');
+        }
+        renderPending();
+        setDateToday();
+      } else {
+        error.textContent = '❌ ' + (r.error || 'Ошибка входа');
+        error.style.display = 'block';
+      }
+    }
+
+    function logout() {
+      currentUser = null;
+      document.getElementById('app').classList.add('hidden');
+      document.getElementById('login-screen').classList.remove('hidden');
+    }
+
+    function setDateToday() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      let mm = String(today.getMonth() + 1).padStart(2, '0');
+      let dd = String(today.getDate()).padStart(2, '0');
+      document.getElementById('date-picker').value = `${yyyy}-${mm}-${dd}`;
+      renderCalendar();
+    }
+
+    document.getElementById('date-picker').addEventListener('change', renderCalendar);
+
+    async function renderCalendar() {
+      const date = document.getElementById('date-picker').value;
+      const container = document.getElementById('calendar');
+      container.innerHTML = '<h3>Свободное время (10:00–22:00)</h3>';
+      if (!date) return;
+
+      const res = await fetch('/api/bookings');
+      const bookings = await res.json();
+
+      const table = document.createElement('table');
+      const row = document.createElement('tr');
+
+      for (let h = 10; h < 22; h++) {
+        const hour = `${h}:00`;
+        const cell = document.createElement('td');
+        cell.textContent = hour;
+        const key = `${date}_${hour}`;
+        const booking = bookings[key];
+
+        if (booking) {
+          if (booking.status === 'confirmed') {
+            cell.className = 'slot booked';
+            cell.title = `Занято: ${booking.user}`;
+          } else if (booking.status === 'pending') {
+            cell.className = 'slot pending';
+            cell.title = `Ожидает подтверждения: ${booking.user}`;
+            if (currentUser && currentUser.role === 'admin') {
+              cell.onclick = () => confirmBooking(key, true);
+            }
+          }
+        } else {
+          if (currentUser && currentUser.role !== 'admin') {
+            cell.className = 'slot';
+            cell.onclick = () => bookSlot(date, hour);
+          }
+        }
+        row.appendChild(cell);
+      }
+      table.appendChild(row);
+      container.appendChild(table);
+    }
+
+    async function bookSlot(date, hour) {
+      const key = `${date}_${hour}`;
+      const r = await api('/api/book', { key, user: currentUser.login, date, hour });
+      if (r.error) {
+        alert('❌ ' + r.error);
+      } else {
+        renderCalendar();
+        renderPending();
+        alert('✅ Заявка отправлена на подтверждение!');
+      }
+    }
+
+    async function renderPending() {
+      if (!currentUser || currentUser.role !== 'admin') return;
+      const res = await fetch('/api/bookings');
+      const bookings = await res.json();
+      const list = document.getElementById('pending-list');
+      list.innerHTML = '';
+      let hasPending = false;
+      for (const key in bookings) {
+        if (bookings[key].status === 'pending') {
+          hasPending = true;
+          const div = document.createElement('div');
+          div.style.padding = '8px';
+          div.style.border = '1px solid #eee';
+          div.style.marginBottom = '8px';
+          div.innerHTML = `
+            <strong>${bookings[key].user}</strong> — ${bookings[key].date} ${bookings[key].hour}
+            <div style="margin-top:6px;">
+              <button onclick="confirmBooking('${key}', true)" style="background:#4CAF50; margin-right:6px;">✅ Подтвердить</button>
+              <button onclick="confirmBooking('${key}', false)" style="background:#f44336;">❌ Отклонить</button>
+            </div>
+          `;
+          list.appendChild(div);
+        }
+      }
+      if (!hasPending) {
+        list.innerHTML = '<p>Нет заявок на подтверждение</p>';
+      }
+    }
+
+    async function confirmBooking(key, approve) {
+      await api('/api/confirm', { key, approve });
+      renderCalendar();
+      renderPending();
+    }
+
+    window.onload = function() {
+      setDateToday();
+    };
+  </script>
+</body>
+</html>

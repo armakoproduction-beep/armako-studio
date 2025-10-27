@@ -1,0 +1,13 @@
+{
+  "name": "armako-studio",
+  "version": "1.0.0",
+  "description": "ARMAKO STUDIOS booking system",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6"
+  }
+}
