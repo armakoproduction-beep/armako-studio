@@ -1,0 +1,9 @@
+- type: web
+    name: armako-studio
+    env: node
+    region: frankfurt        # или оставь по умолчанию
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
